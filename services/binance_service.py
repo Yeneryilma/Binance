@@ -22,7 +22,7 @@ def get_client():
     mode        = Config.CONFIG['trading_mode']
     api_key     = Config.CONFIG['api_key']
     api_secret  = Config.CONFIG['api_secret']
-    use_testnet = (mode == 'testnet') or Config.CONFIG.get('testnet', False)
+    use_testnet = (mode == 'testnet') or Config.CONFIG.get('testnet', True)
 
     c = Client(api_key, api_secret, testnet=use_testnet)
 
