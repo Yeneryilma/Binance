@@ -1,16 +1,16 @@
 services:
-  - type: web
-    name: app-backend
-    runtime: python
-    rootDir: .
-    buildCommand: pip install -r requirements.txt
-    startCommand: python app.py
-  - type: web
-    name: app-frontend
-    runtime: node
-    rootDir: frontend
-    buildCommand: npm install
-    startCommand: npm start
-    env_vars:
-  - key: BINANCE_IP_WHITELIST
-    value: "74.220.48.0/24,74.220.56.0/24"
+ - type: web
+   name: app-backend
+   runtime: python
+   rootDir: .
+   buildCommand: pip install -r requirements.txt
+   startCommand: python app.py
+ - type: web
+   name: app-frontend
+   runtime: node
+   rootDir: frontend
+   buildCommand: npm install
+   startCommand: npm start
+   env_vars:
+ - key: BINANCE_IP_WHITELIST
+   value: "74.220.48.0/24,74.220.56.0/24"
