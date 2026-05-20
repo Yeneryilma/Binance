@@ -11,3 +11,6 @@ services:
     rootDir: frontend
     buildCommand: npm install
     startCommand: npm start
+    env_vars:
+  - key: BINANCE_IP_WHITELIST
+    value: "74.220.48.0/24,74.220.56.0/24"
