@@ -29,38 +29,38 @@ def get_client():
         return client
 
     mode        = Config.CONFIG['trading_mode']
-    api_key     = Config.CONFIG['api_key']
-    api_secret  = Config.CONFIG['api_secret']
+    api_key, api_secret = _load_api_keys()
     use_testnet = (mode == 'testnet') or Config.CONFIG.get('testnet', False)
 
-    # --- Proxy handling ----------------------------------------------------
-    # List of public HTTPS proxies to try (format: host:port)
-    proxy_list = [
-        "103.111.136.82:8199",
-        "103.111.136.82:8199",
-        "103.111.136.82:8199",
-        "103.111.136.82:8199",
-        "103.111.136.82:8199"
-    ]
-    # Try each proxy until one works; fall back to direct if none succeed
-    proxy_used = None
-    for proxy in proxy_list:
-        try:
-            c = Client(api_key, api_secret, testnet=use_testnet,
-                       requests_params={'proxies': {"https": f"http://{proxy}"},
-                                        'timeout': 10})
-            # Test the connection
-            c.futures_ping()
-            proxy_used = proxy
-            break
-        except Exception:
-            continue
-    if proxy_used is None:
-        # No proxy worked; use direct connection
-        c = Client(api_key, api_secret, testnet=use_testnet)
-    # -----------------------------------------------------------------------
+    if not api_key or not api_secret:
+        if mode == 'paper':
+            c = Client('', '', testnet=False)
+            client = c
+            return c
+        raise ValueError(
+            'API Key veya Secret eksik. '
+            'Ayarlar sekmesinden girin veya BINANCE_API_KEY / BINANCE_API_SECRET '
+            'secret\'larını Replit Secrets\'a ekleyin.'
+        )
+
+    c = Client(api_key, api_secret, testnet=use_testnet,
+               requests_params={'timeout': 10})
+
     if use_testnet:
         c.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
+
+    try:
+        c.futures_ping()
+    except BinanceAPIException as e:
+        code = e.status_code
+        if code == 401:
+            raise ValueError('API Key/Secret hatalı — kimlik doğrulama başarısız (HTTP 401).')
+        elif code == 403:
+            raise ValueError('IP adresiniz API whitelist\'te değil (HTTP 403).')
+        raise ValueError(f'Binance API hatası: {e.message} (kod: {e.status_code})')
+    except Exception as e:
+        raise ValueError(f'Binance\'e bağlanılamadı: {e}')
+
     client = c
     return c
 
