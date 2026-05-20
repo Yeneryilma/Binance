@@ -7,3 +7,4 @@ python-dotenv
 gunicorn
 eventlet
 eventlet
+requests
