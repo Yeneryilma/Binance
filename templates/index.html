@@ -1477,8 +1477,10 @@ function renderTrades(trades) {
 // RENDER LOGS
 // ─────────────────────────────────────────────────
 function renderLogs(logs) {
-  if (logs.length === lastLogCount) return;
+  const sig = logs.length > 0 ? logs[logs.length - 1] : '';
+  if (logs.length === lastLogCount && sig === window._lastLogSig) return;
   lastLogCount = logs.length;
+  window._lastLogSig = sig;
   const panel = document.getElementById('log-panel');
   panel.innerHTML = [...logs].reverse().map(l => {
     const m = l.match(/^\[(\d{2}:\d{2}:\d{2})\] (.+)$/);
@@ -1574,36 +1576,36 @@ function saveSettings() {
 // ACTIONS
 // ─────────────────────────────────────────────────
 function startBot() {
-  if (currentMode === 'live') {
-    openModal(
-      '🔴 CANLI MOD — Botu Başlat',
-      'Gerçek para ile emir açılacak. Devam etmek istiyor musunuz?',
-      () => {
-        fetch('/api/start', { method:'POST' })
-          .then(r => r.json())
-          .then(d => {
-            toast(d.msg, d.ok ? 'success' : 'error');
-            if (d.ok) nextScan = Date.now() + (state.config?.scan_interval_sec || 180) * 1000;
-          });
-      }
-    );
-  } else {
+  const doStart = () => {
     fetch('/api/start', { method:'POST' })
       .then(r => r.json())
       .then(d => {
         toast(d.msg, d.ok ? 'success' : 'error');
         if (d.ok) nextScan = Date.now() + (state.config?.scan_interval_sec || 180) * 1000;
+        fetchState();
       });
+  };
+  if (currentMode === 'live') {
+    openModal(
+      '🔴 CANLI MOD — Botu Başlat',
+      'Gerçek para ile emir açılacak. Devam etmek istiyor musunuz?',
+      doStart
+    );
+  } else {
+    doStart();
   }
 }
 
 function togglePause() {
   fetch('/api/toggle_pause', { method:'POST' })
     .then(r => r.json())
-    .then(d => toast(
-      d.paused ? '⏸ Yeni pozisyon açma durduruldu' : '▶ Yeni pozisyon açma aktif',
-      'success'
-    ));
+    .then(d => {
+      toast(
+        d.paused ? '⏸ Yeni pozisyon açma durduruldu' : '▶ Yeni pozisyon açma aktif',
+        'success'
+      );
+      fetchState();
+    });
 }
 
 function doScan() {
@@ -1656,7 +1658,10 @@ function confirmStopAll() {
     () => {
       fetch('/api/stop_all', { method:'POST' })
         .then(r => r.json())
-        .then(d => toast(d.msg, d.ok ? 'success' : 'error'));
+        .then(d => {
+          toast(d.msg, d.ok ? 'success' : 'error');
+          fetchState();
+        });
     }
   );
 }
