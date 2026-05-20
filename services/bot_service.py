@@ -18,20 +18,23 @@ push_thread  = None
 stop_thread  = None
 socketio_ref = None
 
+# Event set when bot should stop; all loops wake up immediately on set()
+_stop_event = threading.Event()
+
 
 # ─────────────────────────────────────────────────────────────────────
 # STOP MONİTÖR — her 5 saniyede bir çalışır
 # Taramalar arası stop/TP kaçmasını önler
 # ─────────────────────────────────────────────────────────────────────
 def stop_monitor_loop():
-    while True:
+    while not _stop_event.is_set():
         try:
             with state_lock:
-                if not BOT['running']:
-                    break
                 symbols = list(BOT['active_positions'].keys())
 
             for symbol in symbols:
+                if _stop_event.is_set():
+                    return
                 try:
                     current = fetch_price(symbol)
                     if not current:
@@ -86,12 +89,12 @@ def stop_monitor_loop():
                 except Exception as e:
                     bot_log(f"Stop monitör hata [{symbol}]: {e}")
 
-                time.sleep(0.1)   # semboller arası 100ms
+                _stop_event.wait(0.1)   # semboller arası 100ms — wakes early on stop
 
         except Exception as e:
             bot_log(f"Stop monitör genel hata: {e}")
 
-        time.sleep(5)   # tüm semboller bittikten sonra 5sn bekle
+        _stop_event.wait(5)   # tüm semboller bittikten sonra 5sn bekle — wakes early on stop
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -288,9 +291,8 @@ def run_scan():
     results = {'long': 0, 'short': 0, 'closed': 0}
 
     for symbol in Config.CONFIG['symbols']:
-        with state_lock:
-            if not BOT['running']:
-                break
+        if _stop_event.is_set():
+            break
         try:
             r = scan_symbol(symbol)
             if r['result'] == 'LONG':
@@ -301,7 +303,7 @@ def run_scan():
                 results['closed'] += 1
         except Exception as e:
             bot_log(f"Hata [{symbol}]: {e}")
-        time.sleep(Config.CONFIG['request_delay'])
+        _stop_event.wait(Config.CONFIG['request_delay'])
 
     with state_lock:
         BOT['scanning'] = False
@@ -319,29 +321,29 @@ def run_scan():
 
 
 def bot_loop():
-    while True:
-        with state_lock:
-            if not BOT['running']:
-                break
+    while not _stop_event.is_set():
         started = time.time()
         run_scan()
         elapsed  = time.time() - started
         wait_sec = max(1, int(Config.CONFIG['scan_interval_sec'] - elapsed))
-        for _ in range(wait_sec):
-            with state_lock:
-                if not BOT['running']:
-                    return
-            time.sleep(1)
+        _stop_event.wait(wait_sec)
 
 
 def push_loop(build_state_func):
-    while True:
+    while not _stop_event.is_set():
         try:
             if socketio_ref:
                 socketio_ref.emit('state_update', build_state_func())
         except Exception:
             pass
-        time.sleep(2)
+        _stop_event.wait(2)
+
+
+def _join_threads(timeout=5):
+    """Wait for all background threads to exit (bounded by timeout seconds each)."""
+    for t in (bot_thread, push_thread, stop_thread):
+        if t is not None and t.is_alive():
+            t.join(timeout=timeout)
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -356,6 +358,11 @@ def start_bot(socketio, build_state_func):
             return False, 'Bot zaten çalışıyor'
         BOT['running'] = True
 
+    # Signal any lingering threads to stop, then wait for them to exit
+    _stop_event.set()
+    _join_threads(timeout=5)
+    _stop_event.clear()
+
     try:
         reset_client()
         get_client()
@@ -366,8 +373,9 @@ def start_bot(socketio, build_state_func):
         return False, f'Bağlantı hatası: {e}'
 
     # Ana tarama thread'i
-    bot_thread = threading.Thread(target=bot_loop, daemon=True)
-    bot_thread.start()
+    if bot_thread is None or not bot_thread.is_alive():
+        bot_thread = threading.Thread(target=bot_loop, daemon=True)
+        bot_thread.start()
 
     # Stop monitör thread'i
     if stop_thread is None or not stop_thread.is_alive():
@@ -387,6 +395,7 @@ def start_bot(socketio, build_state_func):
 
 
 def stop_bot():
+    _stop_event.set()
     with state_lock:
         BOT['running'] = False
     bot_log("BOT DURDURULDU")
