@@ -24,7 +24,36 @@ def get_client():
     api_secret  = Config.CONFIG['api_secret']
     use_testnet = (mode == 'testnet') or Config.CONFIG.get('testnet', False)
 
-    c = Client(api_key, api_secret, testnet=use_testnet, requests_params={'proxies': {"https": "http://138.197.157.45:3128"}})
+    # --- Proxy handling ----------------------------------------------------
+    # List of public HTTPS proxies to try (format: host:port)
+    proxy_list = [
+        "103.111.136.82:8199",
+        "103.111.136.82:8199",
+        "103.111.136.82:8199",
+        "103.111.136.82:8199",
+        "103.111.136.82:8199"
+    ]
+    # Try each proxy until one works; fall back to direct if none succeed
+    proxy_used = None
+    for proxy in proxy_list:
+        try:
+            c = Client(api_key, api_secret, testnet=use_testnet,
+                       requests_params={'proxies': {"https": f"http://{proxy}"},
+                                        'timeout': 10})
+            # Test the connection
+            c.futures_ping()
+            proxy_used = proxy
+            break
+        except Exception:
+            continue
+    if proxy_used is None:
+        # No proxy worked; use direct connection
+        c = Client(api_key, api_secret, testnet=use_testnet)
+    # -----------------------------------------------------------------------
+    if use_testnet:
+        c.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
+    client = c
+    return c
 
     if use_testnet:
         c.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
