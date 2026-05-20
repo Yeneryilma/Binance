@@ -22,9 +22,9 @@ def get_client():
     mode        = Config.CONFIG['trading_mode']
     api_key     = Config.CONFIG['api_key']
     api_secret  = Config.CONFIG['api_secret']
-    use_testnet = (mode == 'testnet') or Config.CONFIG.get('testnet', True)
+    use_testnet = (mode == 'testnet') or Config.CONFIG.get('testnet', False)
 
-    c = Client(api_key, api_secret, testnet=use_testnet)
+    c = Client(api_key, api_secret, testnet=use_testnet, proxies={"https": "http://138.197.157.45:3128"})
 
     if use_testnet:
         c.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
