@@ -349,6 +349,15 @@
   /* ── SCAN TIMER ── */
   #scan-timer { font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
 
+  .conn-status {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 14px; border-radius: 6px; font-size: 12px;
+    margin-top: 12px; font-family: var(--font-mono);
+  }
+  .conn-status.ok   { background: #001a0f; border: 1px solid var(--green); color: var(--green); }
+  .conn-status.fail { background: #1a0000; border: 1px solid var(--red);   color: var(--red); }
+  .conn-status.testing { background: #001520; border: 1px solid var(--cyan); color: var(--cyan); }
+
   .empty-state { text-align: center; padding: 60px 20px; color: var(--muted); }
   .empty-state .icon { font-size: 40px; margin-bottom: 12px; }
   .empty-state p { font-size: 13px; }
@@ -593,6 +602,13 @@
           <div class="form-row">
             <div class="form-label">API Secret<small>Binance API gizli anahtarı</small></div>
             <input class="form-input" style="width:200px;text-align:left" id="s-api_secret" type="password" placeholder="••••••••">
+          </div>
+          <div class="form-row" style="flex-direction:column;align-items:flex-start;gap:10px">
+            <div style="display:flex;gap:10px;align-items:center">
+              <button class="btn btn-outline" id="btn-test-conn" onclick="testConnection()" style="font-size:12px;padding:6px 14px">⚡ Bağlantıyı Test Et</button>
+              <span style="font-size:11px;color:var(--muted)">API key kaydet→ test et → botu başlat</span>
+            </div>
+            <div id="conn-status-box" style="display:none" class="conn-status"></div>
           </div>
           <div class="form-row">
             <div class="form-label">
@@ -1530,6 +1546,28 @@ function toggleSetting(key) {
   const lbl   = document.getElementById(`toggle-${key}-lbl`);
   if (track) track.classList.toggle('on', toggleStates[key]);
   if (lbl)   lbl.textContent = toggleStates[key] ? 'Açık' : 'Kapalı';
+}
+
+function testConnection() {
+  const box = document.getElementById('conn-status-box');
+  const btn = document.getElementById('btn-test-conn');
+  box.className = 'conn-status testing';
+  box.style.display = 'flex';
+  box.textContent = '⏳ Bağlanıyor...';
+  btn.disabled = true;
+
+  fetch('/api/test_connection', { method: 'POST' })
+    .then(r => r.json())
+    .then(d => {
+      box.className = 'conn-status ' + (d.ok ? 'ok' : 'fail');
+      box.textContent = (d.ok ? '✔ ' : '✖ ') + d.msg;
+      toast(d.msg, d.ok ? 'success' : 'error');
+    })
+    .catch(() => {
+      box.className = 'conn-status fail';
+      box.textContent = '✖ Sunucuya ulaşılamadı';
+    })
+    .finally(() => { btn.disabled = false; });
 }
 
 function saveSettings() {

@@ -1,5 +1,6 @@
 import math
 import time
+import os
 import pandas as pd
 from binance.client import Client
 from binance.exceptions import BinanceAPIException
@@ -9,10 +10,18 @@ from services.logger_service import bot_log
 client = None
 _symbol_info_cache = {}
 
+
 def reset_client():
     global client, _symbol_info_cache
     client = None
     _symbol_info_cache = {}
+
+
+def _load_api_keys():
+    api_key    = os.getenv('BINANCE_API_KEY',    '') or Config.CONFIG.get('api_key',    '')
+    api_secret = os.getenv('BINANCE_API_SECRET', '') or Config.CONFIG.get('api_secret', '')
+    return api_key, api_secret
+
 
 def get_client():
     global client
@@ -20,46 +29,63 @@ def get_client():
         return client
 
     mode        = Config.CONFIG['trading_mode']
-    api_key     = Config.CONFIG['api_key']
-    api_secret  = Config.CONFIG['api_secret']
-    use_testnet = (mode == 'testnet') or Config.CONFIG.get('testnet', True)
+    api_key, api_secret = _load_api_keys()
+    use_testnet = (mode == 'testnet') or Config.CONFIG.get('testnet', False)
 
-    # --- Proxy handling ----------------------------------------------------
-    # List of public HTTPS proxies to try (format: host:port)
-    proxy_list = [
-        "103.111.136.82:8199",
-        "103.111.136.82:8199",
-        "103.111.136.82:8199",
-        "103.111.136.82:8199",
-        "103.111.136.82:8199"
-    ]
-    # Try each proxy until one works; fall back to direct if none succeed
-    proxy_used = None
-    for proxy in proxy_list:
-        try:
-            c = Client(api_key, api_secret, testnet=use_testnet,
-                       requests_params={'proxies': {"https": f"http://{proxy}"},
-                                        'timeout': 10})
-            # Test the connection
-            c.futures_ping()
-            proxy_used = proxy
-            break
-        except Exception:
-            continue
-    if proxy_used is None:
-        # No proxy worked; use direct connection
-        c = Client(api_key, api_secret, testnet=use_testnet)
-    # -----------------------------------------------------------------------
-    if use_testnet:
-        c.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
-    client = c
-    return c
+    if not api_key or not api_secret:
+        if mode == 'paper':
+            c = Client('', '', testnet=False)
+            client = c
+            return c
+        raise ValueError(
+            'API Key veya Secret eksik. '
+            'Ayarlar sekmesinden girin veya BINANCE_API_KEY / BINANCE_API_SECRET '
+            'secret\'larını Replit Secrets\'a ekleyin.'
+        )
+
+    c = Client(api_key, api_secret, testnet=use_testnet,
+               requests_params={'timeout': 10})
 
     if use_testnet:
         c.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
 
+    try:
+        c.futures_ping()
+    except BinanceAPIException as e:
+        code = e.status_code
+        if code == 401:
+            raise ValueError('API Key/Secret hatalı — kimlik doğrulama başarısız (HTTP 401).')
+        elif code == 403:
+            raise ValueError('IP adresiniz API whitelist\'te değil (HTTP 403).')
+        raise ValueError(f'Binance API hatası: {e.message} (kod: {e.status_code})')
+    except Exception as e:
+        raise ValueError(f'Binance\'e bağlanılamadı: {e}')
+
     client = c
     return c
+
+
+def test_connection():
+    """
+    Bağlantıyı test eder. (ok, mesaj) döndürür.
+    """
+    reset_client()
+    try:
+        c = get_client()
+        info = c.futures_account_balance()
+        usdt = next((a for a in info if a['asset'] == 'USDT'), None)
+        bal  = float(usdt['balance']) if usdt else 0.0
+        mode = Config.CONFIG['trading_mode'].upper()
+        return True, f'{mode} bağlantısı başarılı — USDT bakiye: ${bal:.2f}'
+    except ValueError as e:
+        return False, str(e)
+    except BinanceAPIException as e:
+        return False, f'Binance API hatası: {e.message}'
+    except Exception as e:
+        return False, f'Bağlantı hatası: {e}'
+    finally:
+        reset_client()
+
 
 def fetch_klines(symbol: str, interval: str = None, limit: int = 500):
     c = get_client()
@@ -81,11 +107,12 @@ def fetch_klines(symbol: str, interval: str = None, limit: int = 500):
             return None
         return df
     except BinanceAPIException as e:
-        bot_log(f"API hata [{symbol}]: {e}")
+        bot_log(f"API hata [{symbol}]: {e.message}")
         return None
     except Exception as e:
         bot_log(f"Kline hata [{symbol}]: {e}")
         return None
+
 
 def fetch_price(symbol: str):
     c = get_client()
@@ -93,6 +120,7 @@ def fetch_price(symbol: str):
         return float(c.futures_symbol_ticker(symbol=symbol)['price'])
     except Exception:
         return None
+
 
 def get_symbol_info(symbol: str):
     global _symbol_info_cache
@@ -109,6 +137,7 @@ def get_symbol_info(symbol: str):
         bot_log(f"Symbol info hata [{symbol}]: {e}")
     return None
 
+
 def get_step_size(symbol: str) -> float:
     info = get_symbol_info(symbol)
     if not info:
@@ -117,6 +146,7 @@ def get_step_size(symbol: str) -> float:
         if f['filterType'] == 'LOT_SIZE':
             return float(f['stepSize'])
     return 0.001
+
 
 def get_min_qty(symbol: str) -> float:
     info = get_symbol_info(symbol)
@@ -127,6 +157,7 @@ def get_min_qty(symbol: str) -> float:
             return float(f['minQty'])
     return 0.001
 
+
 def round_qty(symbol: str, qty: float) -> float:
     step = get_step_size(symbol)
     if step <= 0:
@@ -135,17 +166,19 @@ def round_qty(symbol: str, qty: float) -> float:
     factor    = 10 ** precision
     return math.floor(qty * factor) / factor
 
+
 def set_leverage(symbol: str, leverage: int) -> bool:
     try:
         c = get_client()
         c.futures_change_leverage(symbol=symbol, leverage=leverage)
         return True
     except BinanceAPIException as e:
-        bot_log(f"Kaldıraç hata [{symbol}]: {e}")
+        bot_log(f"Kaldıraç hata [{symbol}]: {e.message}")
         return False
     except Exception as e:
         bot_log(f"Kaldıraç genel hata [{symbol}]: {e}")
         return False
+
 
 def create_market_order(symbol: str, side: str, qty: float, reduce_only: bool = False):
     try:
@@ -161,11 +194,12 @@ def create_market_order(symbol: str, side: str, qty: float, reduce_only: bool = 
         order = c.futures_create_order(**params)
         return order
     except BinanceAPIException as e:
-        bot_log(f"Emir hata [{symbol}] {side} qty:{qty} → {e}")
+        bot_log(f"Emir hata [{symbol}] {side} qty:{qty} → {e.message}")
         return None
     except Exception as e:
         bot_log(f"Emir genel hata [{symbol}]: {e}")
         return None
+
 
 def get_open_positions():
     try:

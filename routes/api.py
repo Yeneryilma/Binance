@@ -3,7 +3,7 @@ from core.state import BOT, state_lock
 from config import Config
 from services.bot_service import start_bot, stop_bot, run_scan
 from services.portfolio_service import build_state, close_position
-from services.binance_service import fetch_price, reset_client
+from services.binance_service import fetch_price, reset_client, test_connection
 from services.logger_service import bot_log
 
 def parse_bool(v):
@@ -76,6 +76,12 @@ def api_scan():
     import threading
     threading.Thread(target=run_scan, daemon=True).start()
     return jsonify({'ok': True, 'msg': 'Manuel tarama başlatıldı'})
+
+
+@api_bp.post('/test_connection')
+def api_test_connection():
+    ok, msg = test_connection()
+    return jsonify({'ok': ok, 'msg': msg})
 
 # ── MOD DEĞİŞTİRME ────────────────────────────────
 @api_bp.post('/set_mode')
