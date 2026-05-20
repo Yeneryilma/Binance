@@ -8,3 +8,12 @@ gunicorn
 eventlet
 eventlet
 requests
+eventlet
+flask
+flask-socketio
+gunicorn
+numpy
+pandas
+python-dotenv
+python-binance
+requests
