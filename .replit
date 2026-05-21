@@ -42,3 +42,8 @@ run = ["python", "app.py"]
 [postMerge]
 path = "scripts/post-merge.sh"
 timeoutMs = 120000
+
+[userenv]
+
+[userenv.shared]
+BINANCE_PROXY_URL = "http://htshrmle:fktdav33dzmj@23.95.150.145:6114/"
