@@ -23,6 +23,18 @@ def _load_api_keys():
     return api_key, api_secret
 
 
+def _build_proxies():
+    proxy_url = (
+        os.getenv('BINANCE_PROXY_URL') or
+        os.getenv('HTTPS_PROXY') or
+        os.getenv('HTTP_PROXY') or
+        ''
+    )
+    if proxy_url:
+        return {'http': proxy_url, 'https': proxy_url}
+    return {}
+
+
 def get_client():
     global client
     if client is not None:
@@ -32,9 +44,12 @@ def get_client():
     api_key, api_secret = _load_api_keys()
     use_testnet = (mode == 'testnet') or Config.CONFIG.get('testnet', False)
 
+    proxies = _build_proxies()
+
     if not api_key or not api_secret:
         if mode == 'paper':
-            c = Client('', '', testnet=False)
+            c = Client('', '', testnet=False,
+                       requests_params={'timeout': 15, 'proxies': proxies} if proxies else {'timeout': 15})
             client = c
             return c
         raise ValueError(
@@ -43,8 +58,12 @@ def get_client():
             'secret\'larını Replit Secrets\'a ekleyin.'
         )
 
+    req_params = {'timeout': 15}
+    if proxies:
+        req_params['proxies'] = proxies
+
     c = Client(api_key, api_secret, testnet=use_testnet,
-               requests_params={'timeout': 10})
+               requests_params=req_params)
 
     if use_testnet:
         c.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
